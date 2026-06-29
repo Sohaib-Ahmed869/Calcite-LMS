@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const MODELS_TO_SYNC = [
   '../models/User',
+  '../models/Tenant',
   '../models/Course',
   '../models/CourseModule',
   '../models/CourseLesson',

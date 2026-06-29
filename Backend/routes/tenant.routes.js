@@ -1,7 +1,7 @@
 const express = require('express');
 const { resolveTenant } = require('../middleware/tenant');
 const { authenticate, requireAdmin } = require('../middleware/auth');
-const { upload } = require('../middleware/brandingUpload');
+const { uploadBrandingAsset } = require('../middleware/upload');
 const { getBranding, updateBranding, uploadAsset } = require('../controllers/branding.controller');
 
 // Mounted at /api/tenant — per-tenant branding (resolved by X-Tenant-Code).
@@ -12,6 +12,6 @@ router.get('/branding', resolveTenant, getBranding);
 
 // Admin-only writes — authenticated via the MongoDB course token (same as the rest of the app).
 router.put('/branding', resolveTenant, authenticate, requireAdmin, updateBranding);
-router.post('/branding/asset', resolveTenant, authenticate, requireAdmin, upload.single('file'), uploadAsset);
+router.post('/branding/asset', resolveTenant, authenticate, requireAdmin, uploadBrandingAsset, uploadAsset);
 
 module.exports = router;

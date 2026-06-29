@@ -3,6 +3,12 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const User = require('../models/User');
+const Tenant = require('../models/Tenant');
+
+const TENANTS = [
+  { code: 'calcite', name: 'Calcite LMS' },
+  { code: 'northwood', name: 'Northwood Academy' },
+];
 
 const USERS = [
   {
@@ -22,6 +28,20 @@ const USERS = [
 (async () => {
   try {
     await mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/calcite_courses');
+
+    for (const t of TENANTS) {
+      // Upsert by code; never clobber existing branding overrides.
+      const existing = await Tenant.findOne({ code: t.code });
+      if (existing) {
+        existing.name = t.name;
+        await existing.save();
+        console.log(`tenant   ${t.code} (updated)`);
+      } else {
+        await Tenant.create({ code: t.code, name: t.name, branding: {} });
+        console.log(`tenant   ${t.code} (created)`);
+      }
+    }
+
     for (const u of USERS) {
       const existing = await User.findOne({ email: u.email });
       if (existing) {

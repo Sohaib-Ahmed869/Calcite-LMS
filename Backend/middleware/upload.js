@@ -96,6 +96,30 @@ const avatarUploader = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
+// Branding asset (single field "file") — logos & favicon → S3, keyed by tenant + slot. Allows SVG/ICO.
+const brandingImageFilter = (req, file, cb) => {
+  if (/^image\/(png|jpe?g|gif|webp|svg\+xml|x-icon|vnd\.microsoft\.icon)$/.test(file.mimetype)) cb(null, true);
+  else cb(new Error('Branding asset must be an image (PNG, JPG, GIF, WebP, SVG or ICO).'), false);
+};
+const buildBrandingKey = (req, file, cb) => {
+  const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+  const ext = path.extname(file.originalname) || '';
+  const tenant = (req.tenant?.code || 'tenant').replace(/[^a-z0-9_-]/gi, '');
+  const type = (req.query.type || req.body.type || 'asset').replace(/[^a-z0-9_-]/gi, '');
+  cb(null, `branding/${tenant}/${type}-${uniqueSuffix}${ext}`);
+};
+const brandingUploader = multer({
+  storage: multerS3({
+    s3: s3Client,
+    bucket: BUCKET,
+    contentType: multerS3.AUTO_CONTENT_TYPE,
+    metadata: (req, file, cb) => cb(null, { fieldName: file.fieldname, tenant: req.tenant?.code || 'unknown' }),
+    key: buildBrandingKey,
+  }),
+  fileFilter: brandingImageFilter,
+  limits: { fileSize: 4 * 1024 * 1024 },
+});
+
 // Wrap a multer middleware so multer errors come back as clean 400 JSON.
 const handleUploadError = (mw) => (req, res, next) =>
   mw(req, res, (err) => {
@@ -147,6 +171,7 @@ module.exports = {
   uploadLessonFile: handleUploadError(lessonUploader.single('file')),
   uploadCourseCover: handleUploadError(coverUploader.single('coverImage')),
   uploadUserAvatar: handleUploadError(avatarUploader.single('avatar')),
+  uploadBrandingAsset: handleUploadError(brandingUploader.single('file')),
   deleteFileFromS3,
   getSignedUrl: getSignedUrlForFile,
   uploadBufferToS3,
