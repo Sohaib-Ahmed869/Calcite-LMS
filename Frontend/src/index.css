@@ -1,0 +1,175 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Default theme tokens. These render the app sensibly BEFORE branding loads (and as a fallback if
+ * the branding fetch fails). BrandingProvider overrides each `--color-*` at runtime from the
+ * tenant's branding response — the keys here mirror Backend DEFAULT_BRANDING.colors exactly.
+ */
+:root {
+  --color-primary: #0a2952;
+  --color-primaryForeground: #ffffff;
+  --color-accent: #c77700;
+  --color-accentForeground: #ffffff;
+  --color-background: #f8fafc;
+  --color-foreground: #0f172a;
+  --color-card: #ffffff;
+  --color-cardForeground: #0f172a;
+  --color-sidebar: #0a2952;
+  --color-sidebarForeground: #e2e8f0;
+  --color-sidebarAccent: #14346b;
+  --color-sidebarBorder: #13315c;
+  --color-border: #e2e8f0;
+  --color-ring: #0a2952;
+  --color-muted: #f1f5f9;
+  --color-mutedForeground: #64748b;
+  --color-danger: #b91c1c;
+  --color-success: #2e7d32;
+  --color-warning: #c77700;
+
+  /* RGB triples (mirrors the hex above) so alpha tints work — `rgba(var(--color-accent-rgb), .1)`.
+     BrandingProvider re-derives these whenever the palette changes. */
+  --color-primary-rgb: 10, 41, 82;
+  --color-accent-rgb: 199, 119, 0;
+
+  /* Design tokens (fonts + shape). Defaults reproduce today's look; the Branding "Design" tab
+     overrides these per tenant via BrandingProvider.applyBranding(). */
+  --font-heading: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-nav: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --radius-card: 0.9rem;
+  --radius-btn: 0.5rem;
+  --radius-input: 0.5rem;
+  --radius-pill: 9999px;
+  --border-width: 1px;
+  --card-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04), 0 1px 3px 0 rgb(0 0 0 / 0.06);
+}
+
+/*
+ * Admin dark mode — opt-in, scoped. AdminUiContext sets data-admin-theme="dark" on the shell; we
+ * override the neutral surface tokens to dark values there. Because every component paints with token
+ * utilities (bg-card, text-foreground, border-border, text-muted-foreground), they recolour
+ * automatically. Brand hues (primary/accent/danger/success/warning) are intentionally kept.
+ *
+ * The dark surfaces are DERIVED FROM THE APPLIED PALETTE: BrandingProvider.applyBranding() tints each
+ * `--color-*-dark` from the brand hue so dark mode carries the chosen theme (a navy palette → dark
+ * navy, a forest palette → dark green). The hard-coded fallbacks below keep dark mode sensible before
+ * branding loads / if the fetch fails.
+ */
+[data-admin-theme='dark'] {
+  --color-background: var(--color-background-dark, #0b0d12);
+  --color-foreground: var(--color-foreground-dark, #e6eaf0);
+  --color-card: var(--color-card-dark, #14171f);
+  --color-cardForeground: var(--color-cardForeground-dark, #e6eaf0);
+  --color-muted: var(--color-muted-dark, #1c2029);
+  --color-mutedForeground: var(--color-mutedForeground-dark, #9aa6b6);
+  --color-border: var(--color-border-dark, #262b36);
+  --color-ring: var(--color-accent);
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Headings follow the tenant's chosen heading font. */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+}
+
+/*
+ * Per-tenant SHAPE — make the chosen roundness / border weight / shadow actually apply across the
+ * whole authed admin portal (scoped to the shell via [data-admin-theme]). Every standard radius
+ * utility the app uses is remapped to a shape token: small controls (rounded … rounded-lg) →
+ * --radius-btn, cards/panels (rounded-xl … rounded-3xl) → --radius-card, and form controls →
+ * --radius-input. Pills & circles (rounded-full / rounded-pill) and partial-corner utilities are
+ * intentionally left alone; the admin-ui token classes (rounded-card/btn/input) already read the
+ * tokens directly. So picking Sharp/Soft/Rounded/Pill reshapes the entire portal live.
+ */
+[data-admin-theme] :is(.rounded, .rounded-sm, .rounded-md, .rounded-lg) {
+  border-radius: var(--radius-btn);
+}
+[data-admin-theme] :is(.rounded-xl, .rounded-2xl, .rounded-3xl) {
+  border-radius: var(--radius-card);
+}
+/* Catch-all: buttons and bordered/elevated boxes that DON'T set their own radius class still follow
+   the shape — so inner divs, cards and buttons round (or square) with the rest of the portal, not
+   just the ones that happened to use a rounded-* utility. `:not([class*="rounded"])` preserves
+   anything intentionally shaped (rounded-full pills, avatars, the token rounded-card/btn classes). */
+[data-admin-theme] :where(.border, .shadow-sm, .shadow, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl, .shadow-card):not([class*='rounded']) {
+  border-radius: var(--radius-card);
+}
+[data-admin-theme] button:not([class*='rounded']) {
+  border-radius: var(--radius-btn);
+}
+[data-admin-theme] :is(input, select, textarea):not([type='checkbox']):not([type='radio']) {
+  border-radius: var(--radius-input);
+}
+[data-admin-theme] .border {
+  border-width: var(--border-width);
+}
+[data-admin-theme] :is(.shadow-sm, .shadow, .shadow-md):not(:hover) {
+  box-shadow: var(--card-shadow);
+}
+
+/*
+ * Token radius utilities defined explicitly as plain CSS (belt-and-suspenders). They're also produced
+ * by tailwind.config.js's borderRadius tokens, BUT if a dev server was started before those tokens
+ * were added it won't have reloaded the config, leaving `rounded-card`/`rounded-btn`/`rounded-input`
+ * unrecognised → elements render square. Defining them here guarantees the admin-ui components follow
+ * the shape tokens no matter the build/config state. (Same value as the Tailwind utility, so no-op
+ * when the config IS loaded.) `:where()` keeps specificity at 0 so element-specific rules still win.
+ */
+:where(.rounded-card) { border-radius: var(--radius-card); }
+:where(.rounded-btn) { border-radius: var(--radius-btn); }
+:where(.rounded-input) { border-radius: var(--radius-input); }
+:where(.rounded-pill) { border-radius: var(--radius-pill); }
+
+/* Smooth the whole-app recolour when the tenant/theme changes. */
+* {
+  transition-property: background-color, border-color;
+  transition-duration: 150ms;
+}
+
+/*
+ * PRINT — for the "Print profile" action on the student 360 (and any future print/export). Drop the
+ * app chrome (sidebar + top bar), flatten the content panel to the page, and force exact colours so
+ * the gradient hero, charts and status colours survive printing. Page-level `print:hidden` /
+ * `hidden print:block` utilities (Tailwind) switch the interactive tabs for a stacked full report.
+ */
+@media print {
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  header, aside { display: none !important; }
+  main { padding: 0 !important; }
+  main > div { padding: 0 !important; border-radius: 0 !important; min-height: 0 !important; }
+  .shadow-card, .shadow, .shadow-sm, .shadow-md, .shadow-lg { box-shadow: none !important; }
+}
+
+@layer utilities {
+  .focus-ring {
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+  }
+  .focus-ring:focus-visible {
+    outline-color: var(--color-ring);
+  }
+  /* Hide scrollbars while keeping scroll behaviour (sidebar nav, theme gallery). */
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}

@@ -1,0 +1,6 @@
+node_modules/
+.env
+# Runtime data + uploaded assets (seeded/created on first run).
+data/
+uploads/
+*.log

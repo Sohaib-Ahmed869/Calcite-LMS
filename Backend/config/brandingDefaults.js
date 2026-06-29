@@ -1,0 +1,36 @@
+const DEFAULT_BRANDING = {
+  displayName: 'Calcite LMS',
+  tagline: 'Learning Management System',
+  theme: 'light',
+  colors: {
+    primary: '#0a2952',
+    primaryForeground: '#ffffff',
+    accent: '#c77700',
+    accentForeground: '#ffffff',
+    background: '#f8fafc',
+    foreground: '#0f172a',
+    card: '#ffffff',
+    cardForeground: '#0f172a',
+    sidebar: '#0a2952',
+    sidebarForeground: '#e2e8f0',
+    sidebarAccent: '#14346b',
+    sidebarBorder: '#13315c',
+    border: '#e2e8f0',
+    ring: '#0a2952',
+    muted: '#f1f5f9',
+    mutedForeground: '#64748b',
+    danger: '#b91c1c',
+    success: '#2e7d32',
+    warning: '#c77700',
+  },
+  logos: { full: '', mark: '', markDark: '', header: '' },
+  faviconUrl: '',
+  design: {
+    templateId: 'classic',
+    colorThemeId: null,
+    fonts: { heading: 'inter', body: 'inter', nav: 'inter' },
+    shape: { roundness: 'rounded', borderWidth: 'thin', shadow: 'soft' },
+  },
+};
+
+module.exports = { DEFAULT_BRANDING };
