@@ -13,6 +13,7 @@ export const StudentService = {
     return apiGet(`/students${q ? `?${q}` : ''}`);
   },
   get: (id) => apiGet(`/students/${id}`),
+  checkEmail: (email) => apiGet(`/students/check-email?email=${encodeURIComponent(email)}`),
   create: (body) => apiPost('/students', body),
   update: (id, body) => apiPut(`/students/${id}`, body),
   setStatus: (id, isActive) => apiPatch(`/students/${id}/status`, { isActive }),

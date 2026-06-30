@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Users,
@@ -18,10 +18,15 @@ import {
 import { useAuth } from '../auth/AuthProvider';
 import { useApi } from '../lib/useApi';
 import { apiGet } from '../lib/api';
+import { cn } from '../lib/cn';
 import { formatDate } from '../lib/format';
 import { Card, Badge, Avatar, Button } from '../components/ui';
+import { AdminLoader } from '../admin-ui/Loader';
 import { RingStat, Donut, TrendBars } from './reports/charts';
-import { ReportService } from '../services/report.service';
+import { useReportOverview } from '../services/useReportOverview';
+import { CourseFormModal } from './courses/modals/CourseFormModal';
+import { StudentFormModal } from './students/modals/StudentFormModal';
+import { EnrollModal } from './enrollments/modals/EnrollModal';
 
 const accentTint = (a) => ({ backgroundColor: `rgba(var(--color-accent-rgb), ${a})` });
 const HERO = [
@@ -53,7 +58,7 @@ function eventWhen(ev) {
 function StatCard({ to, icon: Icon, label, value, hint }) {
   return (
     <Link to={to}>
-      <Card className="group flex items-start justify-between transition-shadow hover:shadow-md">
+      <Card className="group flex items-start justify-between transition-all hover:-translate-y-0.5 hover:shadow-lift">
         <div className="min-w-0">
           <p className="text-sm text-muted-foreground">{label}</p>
           <p className="mt-1 text-2xl font-bold text-foreground">{value}</p>
@@ -67,9 +72,11 @@ function StatCard({ to, icon: Icon, label, value, hint }) {
   );
 }
 
-function QuickAction({ to, icon: Icon, label, desc }) {
-  return (
-    <Link to={to} className="group flex items-center gap-3 rounded-card border border-border bg-card p-3.5 transition-all hover:border-accent/50 hover:shadow-sm">
+/** A quick action that either opens a modal (`onClick`) or navigates (`to`). */
+function QuickAction({ to, onClick, icon: Icon, label, desc }) {
+  const cls = 'group flex w-full items-center gap-3 rounded-card border border-border bg-card p-3.5 text-left transition-all hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-soft';
+  const inner = (
+    <>
       <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-accent transition-colors group-hover:bg-accent group-hover:text-accent-foreground" style={accentTint(0.12)}>
         <Icon className="h-5 w-5" />
       </span>
@@ -78,8 +85,11 @@ function QuickAction({ to, icon: Icon, label, desc }) {
         <span className="block truncate text-xs text-muted-foreground">{desc}</span>
       </span>
       <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-accent" />
-    </Link>
+    </>
   );
+  return onClick
+    ? <button type="button" onClick={onClick} className={cls}>{inner}</button>
+    : <Link to={to} className={cn(cls, 'no-underline')}>{inner}</Link>;
 }
 
 function SectionTitle({ children, to, linkLabel }) {
@@ -96,8 +106,15 @@ export function DashboardPage() {
   const isAdmin = (user?.roles || []).includes('admin') || user?.role === 'admin';
   const firstName = user?.displayName?.split(' ')[0] || user?.firstName || 'there';
 
-  const overview = useApi(() => (isAdmin ? ReportService.overview() : Promise.resolve(null)), [isAdmin]);
+  // Quick-create modals open straight from the dashboard; on save we refresh the KPIs/charts.
+  const [modal, setModal] = useState(null); // 'course' | 'student' | 'enroll' | null
+
+  // Shared session cache with the Reports page → navigating between them won't refetch.
+  const overview = useReportOverview(isAdmin);
   const schedule = useApi(() => apiGet(`/schedule?from=${encodeURIComponent(new Date().toISOString())}`).catch(() => []), []);
+
+  // A quick-create succeeded → refresh the analytics so the KPIs/charts reflect it.
+  const afterSave = () => overview.refetch();
 
   const t = overview.data?.totals || {};
   const trend = overview.data?.trend || [];
@@ -116,6 +133,11 @@ export function DashboardPage() {
 
   const studentName = (s) => s?.name || s?.email || 'Student';
 
+  // First paint → show the branded loader with the Dashboard icon (matches the active tab),
+  // consistent with the other pages. Admins wait on the overview; students on the schedule.
+  const firstLoad = isAdmin ? overview.loading && !overview.data : schedule.loading && !schedule.data;
+  if (firstLoad) return <AdminLoader label="Loading dashboard…" />;
+
   return (
     <div className="space-y-6">
       {/* Hero */}
@@ -131,7 +153,8 @@ export function DashboardPage() {
           <div className="flex flex-wrap items-center gap-2">
             {isAdmin ? (
               <>
-                <Button as={Link} to="/courses" icon={Plus}>New course</Button>
+                <Button icon={Plus} onClick={() => setModal('course')}>New course</Button>
+                <Button variant="white" icon={UserPlus} onClick={() => setModal('student')}>Add student</Button>
                 <Button as={Link} to="/reports" variant="white" icon={TrendingUp}>View reports</Button>
               </>
             ) : (
@@ -145,17 +168,22 @@ export function DashboardPage() {
         <>
           {/* KPIs */}
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {overview.loading && !overview.data ? (
-              [0, 1, 2, 3].map((i) => <Card key={i} className="h-[104px] animate-pulse" />)
-            ) : (
-              <>
-                <StatCard to="/courses" icon={BookOpen} label="Courses" value={t.courses ?? 0} hint={`${t.publishedCourses ?? 0} published`} />
-                <StatCard to="/students" icon={Users} label="Students" value={t.students ?? 0} hint={`${t.activeStudents ?? 0} active`} />
-                <StatCard to="/enrollments" icon={GraduationCap} label="Enrolments" value={t.enrollments ?? 0} hint={`${t.activeEnrollments ?? 0} active`} />
-                <StatCard to="/reports" icon={TrendingUp} label="Completion rate" value={`${t.completionRate ?? 0}%`} hint={`avg progress ${t.avgProgress ?? 0}%`} />
-              </>
-            )}
+            <StatCard to="/courses" icon={BookOpen} label="Courses" value={t.courses ?? 0} hint={`${t.publishedCourses ?? 0} published`} />
+            <StatCard to="/students" icon={Users} label="Students" value={t.students ?? 0} hint={`${t.activeStudents ?? 0} active`} />
+            <StatCard to="/enrollments" icon={GraduationCap} label="Enrolments" value={t.enrollments ?? 0} hint={`${t.activeEnrollments ?? 0} active`} />
+            <StatCard to="/reports" icon={TrendingUp} label="Completion rate" value={`${t.completionRate ?? 0}%`} hint={`avg progress ${t.avgProgress ?? 0}%`} />
           </div>
+
+          {/* Quick actions — open the create modals right here, no page hop */}
+          <Card>
+            <SectionTitle>Quick actions</SectionTitle>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <QuickAction onClick={() => setModal('course')} icon={Plus} label="Create a course" desc="Build modules & upload content" />
+              <QuickAction onClick={() => setModal('student')} icon={UserPlus} label="Add a student" desc="Create a learner account" />
+              <QuickAction onClick={() => setModal('enroll')} icon={GraduationCap} label="Enrol students" desc="Assign learners to courses" />
+              <QuickAction to="/admin/branding" icon={Palette} label="Customise branding" desc="Theme, logos & colours" />
+            </div>
+          </Card>
 
           {/* Trend + status */}
           <div className="grid gap-6 lg:grid-cols-3">
@@ -193,7 +221,7 @@ export function DashboardPage() {
                         <p className="truncate text-xs text-muted-foreground">enrolled in {r.course?.title}</p>
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1">
-                        <Badge tone={STATUS_TONE[r.status] || 'muted'}>{r.status}</Badge>
+                        <Badge tone={STATUS_TONE[r.status] || 'muted'} className="capitalize">{r.status}</Badge>
                         <span className="text-[11px] text-muted-foreground">{formatDate(r.enrolledAt)}</span>
                       </div>
                     </li>
@@ -231,16 +259,6 @@ export function DashboardPage() {
             </Card>
           </div>
 
-          {/* Quick actions */}
-          <Card>
-            <SectionTitle>Quick actions</SectionTitle>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <QuickAction to="/courses" icon={Plus} label="Create a course" desc="Build modules & upload content" />
-              <QuickAction to="/students" icon={UserPlus} label="Add a student" desc="Create a learner account" />
-              <QuickAction to="/enrollments" icon={GraduationCap} label="Enrol students" desc="Assign learners to courses" />
-              <QuickAction to="/admin/branding" icon={Palette} label="Customise branding" desc="Theme, logos & colours" />
-            </div>
-          </Card>
         </>
       ) : (
         /* Non-admin: keep it simple and welcoming */
@@ -251,6 +269,11 @@ export function DashboardPage() {
           <Button as={Link} to="/learn" icon={ArrowRight} className="mt-1">Go to my learning</Button>
         </Card>
       )}
+
+      {/* Quick-create modals — opened from the hero & quick actions */}
+      <CourseFormModal open={modal === 'course'} onClose={() => setModal(null)} course={null} onSaved={afterSave} />
+      <StudentFormModal open={modal === 'student'} onClose={() => setModal(null)} student={null} onSaved={afterSave} />
+      <EnrollModal open={modal === 'enroll'} onClose={() => setModal(null)} onSaved={afterSave} />
     </div>
   );
 }

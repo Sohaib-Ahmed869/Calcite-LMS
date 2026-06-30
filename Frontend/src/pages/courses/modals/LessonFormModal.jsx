@@ -4,7 +4,7 @@ import { Upload, FileCheck2, X } from 'lucide-react';
 import { Modal, Button } from '../../../components/ui';
 import { Field, TextInput } from '../../../admin-ui/fields';
 import { LessonService } from '../../../services/course.service';
-import { LESSON_TYPES, ACCEPT, formatBytes } from '../courseContent.utils';
+import { LESSON_TYPES, ACCEPT, formatBytes, formatDuration } from '../courseContent.utils';
 import { cn } from '../../../lib/cn';
 
 // Map a stored lesson's contentType to one of the form's type tabs.
@@ -12,6 +12,26 @@ function typeKeyFromLesson(lesson) {
   const t = (lesson?.contentType || 'document').toLowerCase();
   if (['video', 'image', 'audio', 'link', 'text'].includes(t)) return t;
   return 'document'; // pdf / presentation / document all edit as "document"
+}
+
+/** Read a media file's duration (in seconds) client-side via a metadata-only load. Resolves null on failure. */
+function readMediaDuration(file, kind) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (v) => { if (!settled) { settled = true; resolve(v); } };
+    try {
+      const url = URL.createObjectURL(file);
+      const el = document.createElement(kind === 'audio' ? 'audio' : 'video');
+      el.preload = 'metadata';
+      const cleanup = () => URL.revokeObjectURL(url);
+      el.onloadedmetadata = () => { const d = el.duration; cleanup(); done(Number.isFinite(d) && d > 0 ? d : null); };
+      el.onerror = () => { cleanup(); done(null); };
+      setTimeout(() => { cleanup(); done(null); }, 20000); // metadata never arrived — give up quietly
+      el.src = url;
+    } catch {
+      done(null);
+    }
+  });
 }
 
 const blank = { title: '', description: '', externalUrl: '', textContent: '', duration: '', isPreview: false, isPublished: true };
@@ -24,6 +44,7 @@ export function LessonFormModal({ open, onClose, moduleId, lesson, onSaved }) {
   const [file, setFile] = useState(null);
   const [dragging, setDragging] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [detectedDur, setDetectedDur] = useState(null); // seconds, auto-read from an uploaded media file
   const fileRef = useRef(null);
 
   const hasExistingFile = !!(lesson?.fileUrl || lesson?.fileKey);
@@ -50,15 +71,25 @@ export function LessonFormModal({ open, onClose, moduleId, lesson, onSaved }) {
       setForm(blank);
     }
     setFile(null);
+    setDetectedDur(null);
   }, [open, lesson]);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const pickFile = (f) => {
+  const pickFile = async (f) => {
     if (!f) return;
     const max = type === 'video' ? 500 : 50;
     if (f.size > max * 1024 * 1024) return toast.error(`File must be under ${max}MB`);
     setFile(f);
+    // Auto-detect length for time-based media so the admin never has to type it (still editable below).
+    if (type === 'video' || type === 'audio') {
+      setDetectedDur(null);
+      const secs = await readMediaDuration(f, type);
+      if (secs) {
+        setDetectedDur(secs);
+        setForm((prev) => ({ ...prev, duration: String(+(secs / 60).toFixed(2)) }));
+      }
+    }
   };
 
   const submit = async (e) => {
@@ -70,7 +101,7 @@ export function LessonFormModal({ open, onClose, moduleId, lesson, onSaved }) {
       return toast.error(type === 'video' ? 'Upload a video or paste a video link' : 'Please choose a file to upload');
     }
 
-    const durationSec = form.duration ? Math.round(parseFloat(form.duration) * 60) : undefined;
+    const durationSec = (type === 'video' || type === 'audio') && form.duration ? Math.round(parseFloat(form.duration) * 60) : undefined;
     setSaving(true);
     try {
       let payload;
@@ -138,7 +169,7 @@ export function LessonFormModal({ open, onClose, moduleId, lesson, onSaved }) {
                 <button
                   key={key}
                   type="button"
-                  onClick={() => { setType(key); setFile(null); }}
+                  onClick={() => { setType(key); setFile(null); setDetectedDur(null); }}
                   className={cn(
                     'inline-flex items-center gap-1.5 rounded-btn border px-3 py-2 text-xs font-semibold transition-all',
                     active ? 'border-accent bg-accent text-accent-foreground shadow-sm' : 'border-border bg-card text-muted-foreground hover:border-accent/50 hover:text-foreground',
@@ -229,8 +260,19 @@ export function LessonFormModal({ open, onClose, moduleId, lesson, onSaved }) {
         </Field>
 
         {type === 'video' || type === 'audio' ? (
-          <Field label="Duration" hint="In minutes — optional.">
-            <TextInput type="number" min="0" step="0.5" value={form.duration} onChange={set('duration')} placeholder="e.g. 12" className="max-w-[160px]" />
+          <Field
+            label="Duration"
+            hint={detectedDur ? `Auto-detected ${formatDuration(detectedDur)} from the file — edit if needed.` : 'In minutes — auto-filled when you upload a file.'}
+          >
+            <TextInput
+              type="number"
+              min="0"
+              step="0.5"
+              value={form.duration}
+              onChange={(e) => { setDetectedDur(null); set('duration')(e); }}
+              placeholder="e.g. 12"
+              className="max-w-[160px]"
+            />
           </Field>
         ) : null}
 

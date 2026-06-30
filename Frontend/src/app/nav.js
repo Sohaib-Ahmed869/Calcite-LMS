@@ -8,13 +8,17 @@ import { humanize } from '../lib/format';
  * Group shape:  { label, flat?, items: [{ to, label, icon, end? }] }
  *   • flat groups render without a header (used for the top-level "Overview" item).
  */
-// Groups visible to everyone (students included).
+// Overview is shown to everyone (students and admins).
 const COMMON_GROUPS = [
   {
     label: 'Overview',
     flat: true,
     items: [{ to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true }],
   },
+];
+
+// Student-only — "My Learning" isn't relevant to admins, so it's gated out of the admin sidebar.
+const LEARNING_GROUPS = [
   {
     label: 'Learning',
     items: [{ to: '/learn', label: 'My Learning', icon: GraduationCap }],
@@ -54,14 +58,17 @@ const ADMIN_GROUPS = [
   },
 ];
 
-const GROUPS = [...COMMON_GROUPS, ...ADMIN_GROUPS];
+// Full set — also drives the title/icon lookups below, so /learn still resolves for an admin
+// who opens "Preview as student" even though it's not in their sidebar.
+const GROUPS = [...COMMON_GROUPS, ...LEARNING_GROUPS, ...ADMIN_GROUPS];
 
-// Coarse role gating — admins see everything; students get Overview + Learning only.
+// Coarse role gating — admins get Overview + admin tools (no "My Learning");
+// students get Overview + Learning only.
 const ADMIN_ROLES = new Set(['admin', 'super_admin', 'calcite_administrator', 'superadmin', 'owner']);
 
 export function navGroupsForRole(role) {
-  if (ADMIN_ROLES.has(role)) return GROUPS;
-  return COMMON_GROUPS;
+  if (ADMIN_ROLES.has(role)) return [...COMMON_GROUPS, ...ADMIN_GROUPS];
+  return [...COMMON_GROUPS, ...LEARNING_GROUPS];
 }
 
 // Flat lookup of every routed title (plus a few that aren't in the sidebar).
@@ -80,6 +87,20 @@ export function titleForPath(pathname) {
   if (match) return TITLES[match];
   const last = pathname.split('/').filter(Boolean).pop();
   return last ? humanize(last) : 'Dashboard';
+}
+
+// Icon lookup parallel to TITLES, so the page loader can show the same mark as the active nav item.
+const ICONS = {};
+GROUPS.forEach((g) => g.items.forEach((i) => (ICONS[i.to] = i.icon)));
+
+export function iconForPath(pathname) {
+  if (ICONS[pathname]) return ICONS[pathname];
+  // Longest matching prefix (so /students/123 → the Students icon).
+  const match = Object.keys(ICONS)
+    .filter((p) => p !== '/' && pathname.startsWith(p))
+    .sort((a, b) => b.length - a.length)[0];
+  // Fall back to the brand mark for any route without its own icon.
+  return match ? ICONS[match] : GraduationCap;
 }
 
 export default navGroupsForRole;

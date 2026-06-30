@@ -1,6 +1,7 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { apiGet } from '../lib/api';
 import { designCssVars, loadFontsForDesign } from '../admin-ui/designSystem';
+import { BrandSpinner } from '../admin-ui/Loader';
 
 // hex (#rrggbb) → "r, g, b" for alpha tints: rgba(var(--color-accent-rgb), 0.1).
 function hexToRgb(hex) {
@@ -105,7 +106,7 @@ export function applyBranding(branding) {
 function BrandingSplash() {
   return (
     <div className="flex h-screen w-screen items-center justify-center bg-background">
-      <div className="h-10 w-10 animate-spin rounded-full border-4 border-muted border-t-primary" />
+      <BrandSpinner size="lg" />
     </div>
   );
 }
@@ -130,10 +131,19 @@ export function BrandingProvider({ children }) {
     };
   }, []);
 
+  // Apply a freshly-saved branding to the live document AND publish it to the shared context, so
+  // chrome that reads from context (sidebar/header logos, display name, favicon) refreshes in place —
+  // no full-page reload needed. Used by the Branding settings page after a successful save.
+  const updateBranding = useCallback((branding) => {
+    if (!branding) return;
+    applyBranding(branding);
+    setState((s) => ({ ...s, branding }));
+  }, []);
+
   if (state.loading) return <BrandingSplash />;
 
   return (
-    <BrandingContext.Provider value={{ branding: state.branding, tenant: state.tenant, error: state.error }}>
+    <BrandingContext.Provider value={{ branding: state.branding, tenant: state.tenant, error: state.error, updateBranding }}>
       {children}
     </BrandingContext.Provider>
   );

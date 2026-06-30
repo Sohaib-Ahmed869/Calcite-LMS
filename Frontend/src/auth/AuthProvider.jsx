@@ -56,7 +56,15 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  return <AuthContext.Provider value={{ user, loading, login, logout, reload }}>{children}</AuthContext.Provider>;
+  /**
+   * Publish an already-fetched user into auth state — e.g. the object a profile/avatar update
+   * returns — so chrome (sidebar/topbar) refreshes WITHOUT a redundant `GET /me` round-trip.
+   */
+  const applyUser = useCallback((next) => {
+    if (next) setUser(next);
+  }, []);
+
+  return <AuthContext.Provider value={{ user, loading, login, logout, reload, applyUser }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

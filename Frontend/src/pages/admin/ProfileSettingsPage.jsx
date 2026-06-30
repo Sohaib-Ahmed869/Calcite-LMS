@@ -24,6 +24,7 @@ import { TabRail } from '../../admin-ui/TabRail';
 import { CustomSelect } from '../../admin-ui/CustomSelect';
 import { AdminLoader } from '../../admin-ui/Loader';
 import { Field, TextInput, PhoneInput, SectionHead, SaveButton, PasswordField, PasswordStrength, Banner } from '../../admin-ui/fields';
+import { COUNTRIES } from '../../admin-ui/countries';
 import ProfileService from '../../services/profile.service';
 
 const TABS = [
@@ -31,15 +32,6 @@ const TABS = [
   { id: 'address', label: 'Address', desc: "Where you're based", icon: MapPin },
   { id: 'security', label: 'Security', desc: 'Password', icon: Lock },
 ];
-
-const COUNTRIES = [
-  'Australia', 'New Zealand', 'United Kingdom', 'United States', 'Canada', 'Ireland', 'India', 'Pakistan',
-  'Bangladesh', 'Sri Lanka', 'Singapore', 'Malaysia', 'Indonesia', 'Philippines', 'China', 'Japan',
-  'South Korea', 'United Arab Emirates', 'Saudi Arabia', 'Qatar', 'Kuwait', 'Bahrain', 'Oman', 'Turkey',
-  'Egypt', 'South Africa', 'Kenya', 'Nigeria', 'Ghana', 'Germany', 'France', 'Italy', 'Spain', 'Portugal',
-  'Netherlands', 'Belgium', 'Switzerland', 'Austria', 'Sweden', 'Norway', 'Denmark', 'Finland', 'Poland',
-  'Greece', 'Brazil', 'Argentina', 'Mexico', 'Chile', 'Colombia', 'Fiji', 'Other',
-].map((c) => ({ value: c, label: c }));
 
 function formatDate(value) {
   if (!value) return null;
@@ -69,11 +61,26 @@ function toForm(u = {}) {
   };
 }
 
+// Serialized snapshot of just the fields the profile form can edit — drives the dirty check so a
+// no-op Save can't fire a PUT, and avatar/password changes (which touch other fields) don't trip it.
+function profileSnapshot(f) {
+  return JSON.stringify({
+    firstName: f.firstName,
+    lastName: f.lastName,
+    displayName: f.displayName,
+    phone: f.phone,
+    country: f.country,
+    address: f.address,
+  });
+}
+
 export function ProfileSettingsPage() {
-  const { user, reload } = useAuth();
+  const { user, applyUser } = useAuth();
   const fileRef = useRef(null);
   const [tab, setTab] = useState('personal');
   const [form, setForm] = useState(() => (user ? toForm(user) : null));
+  // Last-saved snapshot of the editable fields — the Save button stays disabled until the form differs.
+  const savedSnap = useRef(form ? profileSnapshot(form) : '');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [pwd, setPwd] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
@@ -102,8 +109,10 @@ export function ProfileSettingsPage() {
     setUploading(true);
     try {
       const res = await ProfileService.uploadAvatar(file);
+      // The upload response already carries the fresh signed avatar URL + full user — apply it
+      // straight to the form and global auth state (no extra GET /me round-trip).
       setForm((f) => ({ ...f, profileImage: res.url || res.user?.profileImage || f.profileImage }));
-      await reload();
+      applyUser(res.user);
       toast.success('Profile photo updated');
     } catch (err) {
       toast.error(err.message || 'Failed to upload photo');
@@ -124,8 +133,14 @@ export function ProfileSettingsPage() {
         country: form.country,
         address: { ...form.address },
       });
-      if (res.user) setForm((f) => ({ ...toForm(res.user), profileImage: res.user.profileImage || f.profileImage }));
-      await reload();
+      // The PUT returns the full updated user — sync the form and global auth state from it
+      // directly instead of firing a second GET /me.
+      if (res.user) {
+        const next = { ...toForm(res.user), profileImage: res.user.profileImage || form.profileImage };
+        savedSnap.current = profileSnapshot(next);
+        setForm(next);
+        applyUser(res.user);
+      }
       toast.success('Profile updated');
     } catch (err) {
       toast.error(err.message || 'Failed to update profile');
@@ -142,7 +157,9 @@ export function ProfileSettingsPage() {
       const res = await ProfileService.changePassword({ currentPassword: pwd.currentPassword || undefined, newPassword: pwd.newPassword });
       toast.success(res?.message || 'Password updated');
       setPwd({ currentPassword: '', newPassword: '', confirmPassword: '' });
-      await reload();
+      // The endpoint returns only a message, so reflect the new "last changed" date locally
+      // (server stamps it to ~now) instead of refetching the whole profile.
+      setForm((f) => ({ ...f, passwordSetAt: new Date().toISOString() }));
     } catch (err) {
       toast.error(err.message || 'Failed to update password');
     } finally {
@@ -150,6 +167,7 @@ export function ProfileSettingsPage() {
     }
   };
 
+  const profileDirty = profileSnapshot(form) !== savedSnap.current;
   const fullName = `${form.firstName} ${form.lastName}`.trim() || form.displayName || (form.email ? form.email.split('@')[0] : 'User');
   const avatar = form.profileImage;
   const roleLabel = humanize(form.role) || 'Member';
@@ -171,7 +189,7 @@ export function ProfileSettingsPage() {
       <div className="w-full space-y-6 text-foreground">
         {/* Identity banner */}
         <div className="overflow-hidden rounded-card border border-border bg-card shadow-card">
-          <Banner />
+          <Banner initials={initials(fullName)} />
           <div className="flex flex-col gap-4 px-6 pb-5 sm:flex-row sm:items-center sm:justify-between sm:gap-6 sm:px-8">
             <div className="flex items-center gap-4 sm:gap-5">
               <div className="relative -mt-12 shrink-0">
@@ -246,7 +264,7 @@ export function ProfileSettingsPage() {
                       <Field label="Email address" hint="Your email address can't be changed.">
                         <TextInput icon={Mail} name="email" value={form.email} disabled readOnly />
                       </Field>
-                      <Field label="Phone number">
+                      <Field label="Phone number" optional>
                         <PhoneInput value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} placeholder="400 000 000" />
                       </Field>
                       <Field label="Country" className="sm:col-span-2 sm:max-w-sm">
@@ -254,7 +272,7 @@ export function ProfileSettingsPage() {
                       </Field>
                     </div>
                     <div className="flex justify-end border-t border-border pt-6">
-                      <SaveButton saving={saving}>Save changes</SaveButton>
+                      <SaveButton saving={saving} disabled={saving || !profileDirty}>Save changes</SaveButton>
                     </div>
                   </form>
                 )}
@@ -279,7 +297,7 @@ export function ProfileSettingsPage() {
                       </Field>
                     </div>
                     <div className="flex justify-end border-t border-border pt-6">
-                      <SaveButton saving={saving}>Save address</SaveButton>
+                      <SaveButton saving={saving} disabled={saving || !profileDirty}>Save address</SaveButton>
                     </div>
                   </form>
                 )}

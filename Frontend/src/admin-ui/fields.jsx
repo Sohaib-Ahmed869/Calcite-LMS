@@ -2,11 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Lock, Eye, EyeOff, ChevronDown, Check, Search } from 'lucide-react';
 import { cn } from '../lib/cn';
 
-/** A labelled form field with optional hint text. */
-export function Field({ label, hint, children, className }) {
+/** A labelled form field with optional hint text. Pass `optional` to show an inline "Optional" tag
+ *  on the same line as the label (right-aligned). */
+export function Field({ label, hint, optional, children, className }) {
   return (
     <div className={cn('space-y-1.5', className)}>
-      {label ? <label className="block text-sm font-medium text-foreground">{label}</label> : null}
+      {label ? (
+        <div className="flex items-center justify-between gap-2">
+          <label className="text-sm font-medium text-foreground">{label}</label>
+          {optional ? <span className="shrink-0 text-xs font-normal text-muted-foreground">Optional</span> : null}
+        </div>
+      ) : null}
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
       <div className={label || hint ? 'pt-0.5' : undefined}>{children}</div>
     </div>
@@ -118,13 +124,25 @@ export function SaveButton({ saving, children = 'Save', className, ...props }) {
   );
 }
 
-/** A brand-gradient cover strip — used as the backdrop for the profile identity header. */
-export function Banner({ className }) {
+/**
+ * A brand-gradient cover strip — used as the backdrop for the profile identity header. Pass
+ * `initials` to overlay the user's monogram as a large, faint watermark on the right.
+ */
+export function Banner({ className, initials }) {
   return (
     <div
-      className={cn('h-24 w-full', className)}
+      className={cn('relative h-24 w-full overflow-hidden', className)}
       style={{ background: 'linear-gradient(120deg, var(--color-primary), var(--color-accent))' }}
-    />
+    >
+      {initials ? (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 select-none text-[6rem] font-black uppercase leading-none tracking-tighter text-white/20 sm:right-8 sm:text-[9rem]"
+        >
+          {initials}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -200,12 +218,25 @@ function parsePhone(value) {
  * A phone field with a searchable country-code (dial code) selector. `value` is the full string
  * (e.g. "+61 400 123 456"); `onChange(nextValue)` receives the recombined string.
  */
+const PHONE_PANEL_MAX = 320; // approx menu height (search row + max-h-60 list) for the flip decision
+
 export function PhoneInput({ value, onChange, placeholder = '400 123 456' }) {
   const [open, setOpen] = useState(false);
+  const [dropUp, setDropUp] = useState(false);
   const [query, setQuery] = useState('');
   const ref = useRef(null);
 
   const { country, number } = parsePhone(value);
+
+  // Decide direction before opening: drop up only when space below is tight AND above has more room.
+  const toggle = () => {
+    if (!open && ref.current) {
+      const r = ref.current.getBoundingClientRect();
+      const below = window.innerHeight - r.bottom;
+      setDropUp(below < PHONE_PANEL_MAX && r.top > below);
+    }
+    setOpen((o) => !o);
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -235,7 +266,7 @@ export function PhoneInput({ value, onChange, placeholder = '400 123 456' }) {
       <div className="flex items-stretch overflow-hidden rounded-input border border-border bg-card shadow-sm transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20">
         <button
           type="button"
-          onClick={() => setOpen((o) => !o)}
+          onClick={toggle}
           aria-haspopup="listbox"
           aria-expanded={open}
           className="flex shrink-0 items-center gap-1.5 border-r border-border px-3 text-sm text-foreground transition-colors hover:bg-muted"
@@ -255,7 +286,7 @@ export function PhoneInput({ value, onChange, placeholder = '400 123 456' }) {
       </div>
 
       {open ? (
-        <div className="absolute z-50 mt-2 w-full min-w-[260px] overflow-hidden rounded-card border border-border bg-card shadow-card">
+        <div className={cn('absolute z-50 w-full min-w-[260px] overflow-hidden rounded-card border border-border bg-card shadow-card', dropUp ? 'bottom-full mb-2' : 'top-full mt-2')}>
           <div className="flex items-center gap-2 border-b border-border px-3 py-2">
             <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
             <input

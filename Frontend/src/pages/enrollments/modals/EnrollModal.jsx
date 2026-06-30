@@ -4,6 +4,7 @@ import { GraduationCap, Search, Check, Loader2, Users } from 'lucide-react';
 import { Modal, Button, Avatar } from '../../../components/ui';
 import { CustomSelect } from '../../../admin-ui/CustomSelect';
 import { cn } from '../../../lib/cn';
+import { cachedFetch, peekCache, invalidateCache } from '../../../lib/useApi';
 import { CourseService } from '../../../services/course.service';
 import { StudentService } from '../../../services/student.service';
 import { EnrollmentService } from '../../../services/enrollment.service';
@@ -20,14 +21,31 @@ export function EnrollModal({ open, onClose, onSaved, defaultCourseId }) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) return undefined;
     setSelected(new Set());
     setQuery('');
     setCourseId(defaultCourseId || '');
+
+    // Served from the shared session cache (the 'courses' key is shared with the Courses page).
+    // When both lists are still fresh, reopening the modal needs no network call at all.
+    const cachedCourses = peekCache('courses');
+    const cachedStudents = peekCache('students:active');
+    if (cachedCourses && cachedStudents) {
+      setCourses(cachedCourses);
+      setStudents(cachedStudents);
+      setLoading(false);
+      return undefined;
+    }
+
+    let alive = true;
     setLoading(true);
-    Promise.all([CourseService.list().catch(() => []), StudentService.list({ status: 'active' }).catch(() => [])])
-      .then(([cs, ss]) => { setCourses(cs || []); setStudents(ss || []); })
-      .finally(() => setLoading(false));
+    Promise.all([
+      cachedFetch('courses', () => CourseService.list()).catch(() => []),
+      cachedFetch('students:active', () => StudentService.list({ status: 'active' })).catch(() => []),
+    ])
+      .then(([cs, ss]) => { if (alive) { setCourses(cs || []); setStudents(ss || []); } })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
   }, [open, defaultCourseId]);
 
   // When the course changes, mark students already enrolled so we can disable them.
@@ -64,6 +82,7 @@ export function EnrollModal({ open, onClose, onSaved, defaultCourseId }) {
     try {
       const res = await EnrollmentService.enroll(courseId, [...selected]);
       const n = res?.enrolled ?? selected.size;
+      invalidateCache('enrollments'); // the list cache is now stale → next visit/refetch pulls fresh
       toast.success(`${n} student${n === 1 ? '' : 's'} enrolled`);
       onSaved?.();
       onClose();

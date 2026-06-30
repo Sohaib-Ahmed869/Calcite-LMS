@@ -1,21 +1,24 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Image as ImageIcon, SwatchBook, Type, Shapes, LayoutTemplate, Star, Check, Loader2, RotateCcw, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { apiGet, apiPut, apiUpload } from '../../lib/api';
-import { useApi } from '../../lib/useApi';
+import { apiPut, apiUpload } from '../../lib/api';
 import { humanize } from '../../lib/format';
-import { applyBranding } from '../../theme/BrandingProvider';
+import { applyBranding, useBranding } from '../../theme/BrandingProvider';
 import { cn } from '../../lib/cn';
+import { Button } from '../../components/ui';
 import { TabRail } from '../../admin-ui/TabRail';
 import { Dropzone } from '../../admin-ui/Dropzone';
 import { CustomSelect } from '../../admin-ui/CustomSelect';
 import { useAdminUi } from '../../admin-ui/AdminUiContext';
-import { AdminLoader } from '../../admin-ui/Loader';
 import { Field, TextInput, SectionHead } from '../../admin-ui/fields';
 import themeCategories, { getThemeById } from '../../admin-ui/themePresets';
 import { FONTS, fontsForRole, ROUNDNESS, BORDER_WIDTH, SHADOW, TEMPLATES, resolveDesign, loadFontById, DEFAULT_DESIGN, FONT_MAP, ROUNDNESS_MAP, BORDER_WIDTH_MAP, SHADOW_MAP } from '../../admin-ui/designSystem';
+
+// Gradient banner + accent tint — shared visual language with the Courses header.
+const GRADIENT = 'linear-gradient(120deg, var(--color-primary), var(--color-accent))';
+const accentTint = (a) => ({ backgroundColor: `rgba(var(--color-accent-rgb), ${a})` });
 
 const SECTIONS = [
   { id: 'identity', label: 'Identity', desc: 'Name, logos & favicon', icon: ImageIcon },
@@ -23,6 +26,16 @@ const SECTIONS = [
   { id: 'typography', label: 'Typography', desc: 'Fonts', icon: Type },
   { id: 'shape', label: 'Shape', desc: 'Corners, borders & shadow', icon: Shapes },
   { id: 'templates', label: 'Templates', desc: 'One-tap starts', icon: LayoutTemplate },
+];
+
+// Upload-slot → the `logos` field it writes (favicon writes `faviconUrl` instead, handled inline).
+const SLOT_FIELD = { full: 'full', mark: 'mark', markDark: 'markDark', header: 'header' };
+
+// The three typography roles rendered in the Typography section.
+const TYPO_ROLES = [
+  { role: 'heading', label: 'Heading font', hint: 'Titles & section headings' },
+  { role: 'body', label: 'Body font', hint: 'Paragraphs & reading text' },
+  { role: 'nav', label: 'Navigation font', hint: 'Menus, tabs & labels' },
 ];
 
 // Map the branding payload → the screen's editable shape.
@@ -122,35 +135,53 @@ function Segmented({ options, value, onChange }) {
   );
 }
 
+/* ── Integrated header stat (same recipe as the Courses header) ─────────────── */
+function HeaderStat({ icon: Icon, label, value }) {
+  return (
+    <div className="flex items-center gap-3 px-5 py-4">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-accent" style={accentTint(0.1)}>
+        <Icon className="h-5 w-5" />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+        <p className="truncate text-lg font-bold text-foreground">{value}</p>
+      </div>
+    </div>
+  );
+}
+
 export function BrandingSettingsPage() {
-  const { data, loading } = useApi(() => apiGet('/tenant/branding', { auth: false }), []);
-  const [form, setForm] = useState(null);
-  const [orgName, setOrgName] = useState('');
-  const [section, setSection] = useState('identity');
-  const [activeThemeCategory, setActiveThemeCategory] = useState('warm');
-  const [saving, setSaving] = useState(false);
-  const [uploadingSlot, setUploadingSlot] = useState(null);
-  const savedRef = useRef(null);
+  // Branding is already fetched app-wide by <BrandingProvider> (it blocks first paint until it
+  // resolves), so we seed the editor straight from context — no extra round-trip, no loading spinner.
+  const { branding, tenant, updateBranding } = useBranding();
   const { theme } = useAdminUi();
 
-  // Hydrate the editable form from the loaded branding.
-  useEffect(() => {
-    if (data?.branding) {
-      const f = toForm(data.branding);
-      setForm(f);
-      savedRef.current = f;
-      setOrgName(data.name || '');
-      setActiveThemeCategory(getThemeById(f.design?.colorThemeId)?.categoryId || 'warm');
-    }
-  }, [data]);
+  const initialForm = useMemo(() => toForm(branding || {}), [branding]);
+  const [form, setForm] = useState(initialForm);
+  const [section, setSection] = useState('identity');
+  const [activeThemeCategory, setActiveThemeCategory] = useState(
+    () => getThemeById(initialForm.design?.colorThemeId)?.categoryId || 'warm',
+  );
+  const [saving, setSaving] = useState(false);
+  const [uploadingSlot, setUploadingSlot] = useState(null);
+  const orgName = tenant?.name || '';
+
+  // Last-saved snapshot + its serialized form — the dirty check compares the live form against this
+  // string, so we only ever serialize the form once per change (see `isDirty`).
+  const savedRef = useRef(initialForm);
+  const savedJson = useRef(JSON.stringify(initialForm));
 
   // Live apply — changes take effect across the real portal as you edit (no separate preview).
+  // rAF-batched so a burst of updates (e.g. dragging a colour picker) collapses to one re-theme/frame.
+  const rafRef = useRef(0);
   useEffect(() => {
-    if (form) applyBranding(form);
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => applyBranding(form));
+    return () => cancelAnimationFrame(rafRef.current);
   }, [form]);
 
   // Leaving without saving restores the last-saved branding so an unsaved edit doesn't stick.
-  useEffect(() => () => savedRef.current && applyBranding(savedRef.current), []);
+  useEffect(() => () => applyBranding(savedRef.current), []);
 
   // Preload every template's fonts so the template thumbnails render in the right typeface.
   useEffect(() => {
@@ -204,9 +235,16 @@ export function BrandingSettingsPage() {
     toast('Reset to default appearance', { icon: '↩️' });
   };
 
-  const isDirty = savedRef.current && form && JSON.stringify(form) !== JSON.stringify(savedRef.current);
+  // Serialize the live form once per change and compare to the cached saved snapshot string.
+  const isDirty = useMemo(() => JSON.stringify(form) !== savedJson.current, [form]);
 
-  const SLOT_FIELD = { full: 'full', mark: 'mark', markDark: 'markDark', header: 'header' };
+  // Current appearance at a glance — feeds the header stats strip.
+  const summary = useMemo(() => ({
+    palette: getThemeById(form.design.colorThemeId)?.name || 'Custom',
+    font: FONTS.find((f) => f.id === form.design.fonts.heading)?.name || '—',
+    corners: ROUNDNESS.find((r) => r.id === form.design.shape.roundness)?.name || '—',
+    template: TEMPLATES.find((t) => t.id === form.design.templateId)?.name || 'Custom',
+  }), [form.design]);
 
   const uploadAsset = async (slot, file) => {
     setUploadingSlot(slot);
@@ -245,56 +283,58 @@ export function BrandingSettingsPage() {
         faviconUrl: form.faviconUrl,
         design: form.design,
       });
-      const nf = toForm(res.branding);
+      const saved = res.branding;
+      const nf = toForm(saved);
       savedRef.current = nf;
+      savedJson.current = JSON.stringify(nf);
       setForm(nf);
-      applyBranding(nf);
-      toast.success('Branding saved — applying across your portal…');
-      setTimeout(() => window.location.reload(), 700);
+      // Publish to the shared context → sidebar/header logos, title & favicon refresh in place.
+      // No full-page reload, so the editor keeps its scroll/section and there's no white flash.
+      updateBranding(saved);
+      toast.success('Branding saved');
     } catch (e) {
       toast.error(e.message || 'Failed to save changes');
+    } finally {
       setSaving(false);
     }
   };
 
   const discard = () => {
-    if (!savedRef.current) return;
     setForm(savedRef.current);
     applyBranding(savedRef.current);
     toast('Reverted unsaved changes', { icon: '↩️' });
   };
 
-  if (loading || !form) {
-    return (
-      <div className="min-h-[60vh]">
-        <AdminLoader label="Loading branding" />
-      </div>
-    );
-  }
-
   return (
     <>
       <div className="w-full space-y-6 pb-24 text-foreground">
-        {/* Header */}
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Portal Branding</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Edit your logos, colours, fonts and shape — changes apply live across the portal and persist on Save.</p>
+        {/* Header card — gradient band + integrated appearance summary (mirrors the Courses header) */}
+        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-card">
+          <div className="relative overflow-hidden px-6 py-7 sm:px-8" style={{ background: GRADIENT }}>
+            {/* decorative motif */}
+            <SwatchBook className="pointer-events-none absolute -right-6 -top-8 h-44 w-44 rotate-12 text-white/10" />
+            <Shapes className="pointer-events-none absolute -bottom-10 right-24 h-32 w-32 -rotate-12 text-white/[0.07]" />
+            <div className="relative flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/70">Appearance</p>
+                <h1 className="mt-0.5 text-2xl font-bold text-white">Portal Branding</h1>
+                <p className="mt-1 max-w-xl text-sm text-white/80">Edit your logos, colours, fonts and shape — changes apply live across the portal and persist on Save.</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {section !== 'identity' ? (
+                  <Button variant="white" icon={RefreshCw} onClick={resetAppearance} title="Reset palette, fonts & shape to default" className="active:scale-95">Reset</Button>
+                ) : null}
+                <Button variant="white" icon={Check} loading={saving} disabled={!isDirty} onClick={save} className="active:scale-95">
+                  {saving ? 'Saving…' : 'Save changes'}
+                </Button>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            {section !== 'identity' ? (
-              <button onClick={resetAppearance} className="inline-flex items-center gap-1.5 rounded-btn border border-border px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted" title="Reset palette, fonts & shape to default">
-                <RefreshCw className="h-4 w-4" /> Reset
-              </button>
-            ) : null}
-            <button
-              onClick={save}
-              disabled={saving || !isDirty}
-              className="inline-flex items-center gap-2 rounded-btn bg-accent px-5 py-2.5 text-sm font-semibold text-accent-foreground transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-              {saving ? 'Saving…' : 'Save changes'}
-            </button>
+          <div className="grid grid-cols-2 divide-x divide-y divide-border sm:grid-cols-4 sm:divide-y-0">
+            <HeaderStat icon={SwatchBook} label="Palette" value={summary.palette} />
+            <HeaderStat icon={Type} label="Heading font" value={summary.font} />
+            <HeaderStat icon={Shapes} label="Corners" value={summary.corners} />
+            <HeaderStat icon={LayoutTemplate} label="Template" value={summary.template} />
           </div>
         </div>
 
@@ -413,11 +453,7 @@ export function BrandingSettingsPage() {
                   <div className="space-y-6">
                     <SectionHead icon={Type} title="Typography" desc="Choose fonts for headings, body text and navigation. Each option previews in its own typeface and applies across the whole portal." />
                     <div className="space-y-4">
-                      {[
-                        { role: 'heading', label: 'Heading font', hint: 'Titles & section headings' },
-                        { role: 'body', label: 'Body font', hint: 'Paragraphs & reading text' },
-                        { role: 'nav', label: 'Navigation font', hint: 'Menus, tabs & labels' },
-                      ].map(({ role, label, hint }) => {
+                      {TYPO_ROLES.map(({ role, label, hint }) => {
                         const stack = (FONT_MAP[form.design.fonts[role]] || FONT_MAP.inter).stack;
                         return (
                           <div key={role} className="grid items-center gap-4 rounded-card border border-border p-4 sm:grid-cols-[minmax(0,240px)_minmax(0,1fr)]">

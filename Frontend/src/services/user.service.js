@@ -14,6 +14,7 @@ export const UserService = {
     return apiGet(`/users${q ? `?${q}` : ''}`);
   },
   get: (id) => apiGet(`/users/${id}`),
+  checkEmail: (email) => apiGet(`/users/check-email?email=${encodeURIComponent(email)}`),
   create: (body) => apiPost('/users', body),
   update: (id, body) => apiPut(`/users/${id}`, body),
   setStatus: (id, isActive) => apiPatch(`/users/${id}/status`, { isActive }),

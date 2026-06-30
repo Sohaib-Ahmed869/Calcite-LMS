@@ -2,14 +2,28 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Check, Search } from 'lucide-react';
 import { cn } from '../lib/cn';
 
+const PANEL_MAX = 300; // approx panel height (search row + max-h-60 list) used for flip decision
+
 /**
  * A searchable dropdown. `options` = [{ value, label, font? }]; each row renders in its own `font`
- * so the typography pickers preview the actual typeface. Calls `onChange(value)`.
+ * so the typography pickers preview the actual typeface. Calls `onChange(value)`. Opens upward when
+ * there isn't enough room below the trigger (e.g. near a modal footer).
  */
 export function CustomSelect({ value, onChange, options = [], placeholder = 'Select…', searchPlaceholder = 'Search…' }) {
   const [open, setOpen] = useState(false);
+  const [dropUp, setDropUp] = useState(false);
   const [query, setQuery] = useState('');
   const ref = useRef(null);
+
+  // Decide direction before opening: drop up only when space below is tight AND above has more room.
+  const toggle = () => {
+    if (!open && ref.current) {
+      const r = ref.current.getBoundingClientRect();
+      const below = window.innerHeight - r.bottom;
+      setDropUp(below < PANEL_MAX && r.top > below);
+    }
+    setOpen((o) => !o);
+  };
 
   const selected = options.find((o) => o.value === value) || null;
 
@@ -34,7 +48,7 @@ export function CustomSelect({ value, onChange, options = [], placeholder = 'Sel
     <div className="relative" ref={ref}>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggle}
         aria-haspopup="listbox"
         aria-expanded={open}
         className="flex w-full items-center justify-between gap-2 rounded-input border border-border bg-card px-3 py-2.5 text-sm text-foreground shadow-sm outline-none transition-colors hover:border-accent/50 focus:border-accent focus:ring-2 focus:ring-accent/20"
@@ -46,7 +60,7 @@ export function CustomSelect({ value, onChange, options = [], placeholder = 'Sel
       </button>
 
       {open ? (
-        <div className="absolute z-50 mt-2 w-full overflow-hidden rounded-card border border-border bg-card shadow-card">
+        <div className={cn('absolute z-50 w-full overflow-hidden rounded-card border border-border bg-card shadow-card', dropUp ? 'bottom-full mb-2' : 'top-full mt-2')}>
           <div className="flex items-center gap-2 border-b border-border px-3 py-2">
             <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
             <input

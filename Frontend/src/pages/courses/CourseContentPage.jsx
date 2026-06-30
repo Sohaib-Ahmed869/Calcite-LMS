@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { Reorder, useDragControls, AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'react-hot-toast';
 import {
@@ -8,6 +8,7 @@ import {
   GripVertical,
   ChevronDown,
   ChevronRight,
+  ChevronsUpDown,
   Layers,
   BookOpen,
   Clock,
@@ -15,8 +16,12 @@ import {
   Pencil,
   Trash2,
   Eye,
+  GlobeLock,
   Settings2,
   Sparkles,
+  GraduationCap,
+  Tag,
+  FolderOpen,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Card, Badge, Button, EmptyState, ConfirmDialog } from '../../components/ui';
@@ -30,6 +35,16 @@ import { lessonIcon, formatDuration } from './courseContent.utils';
 
 const GRADIENT = 'linear-gradient(120deg, var(--color-primary), var(--color-accent))';
 const accentTint = (a) => ({ backgroundColor: `rgba(var(--color-accent-rgb), ${a})` });
+
+/* ── Small building blocks ───────────────────────────────────────────────────── */
+function HeroChip({ icon: Icon, children }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-medium text-white ring-1 ring-inset ring-white/20">
+      {Icon ? <Icon className="h-3 w-3" /> : null}
+      {children}
+    </span>
+  );
+}
 
 function HeaderStat({ icon: Icon, label, value }) {
   return (
@@ -58,7 +73,7 @@ function LessonRow({ lesson, onPreview, onEdit, onDelete, onTogglePublish, onPer
       dragControls={controls}
       onDragEnd={onPersist}
       whileDrag={{ scale: 1.01, boxShadow: 'var(--card-shadow)' }}
-      className="flex items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-2"
+      className="group flex items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-2 transition-colors hover:border-accent/40"
     >
       <button type="button" onPointerDown={(e) => controls.start(e)} className="cursor-grab touch-none p-0.5 text-muted-foreground hover:text-foreground active:cursor-grabbing" title="Drag to reorder">
         <GripVertical className="h-4 w-4" />
@@ -75,12 +90,14 @@ function LessonRow({ lesson, onPreview, onEdit, onDelete, onTogglePublish, onPer
           {!lesson.isPublished ? <span className="text-warning">· Draft</span> : null}
         </div>
       </button>
-      <Button size="iconSm" variant="ghost" icon={Eye} onClick={onPreview} title="Preview" />
-      <Button size="iconSm" variant="ghost" icon={Pencil} onClick={onEdit} title="Edit" />
-      <button type="button" onClick={onTogglePublish} className={cn('hidden rounded-md px-2 py-1 text-[11px] font-semibold transition-colors sm:inline-block', lesson.isPublished ? 'text-muted-foreground hover:text-foreground' : 'text-accent')}>
-        {lesson.isPublished ? 'Unpublish' : 'Publish'}
-      </button>
-      <Button size="iconSm" variant="dangerGhost" icon={Trash2} onClick={onDelete} title="Delete" />
+      <div className="flex items-center gap-0.5 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+        <Button size="iconSm" variant="ghost" icon={Eye} onClick={onPreview} title="Preview" />
+        <Button size="iconSm" variant="ghost" icon={Pencil} onClick={onEdit} title="Edit" />
+        <button type="button" onClick={onTogglePublish} className={cn('hidden rounded-md px-2 py-1 text-[11px] font-semibold transition-colors sm:inline-block', lesson.isPublished ? 'text-muted-foreground hover:text-foreground' : 'text-accent')}>
+          {lesson.isPublished ? 'Unpublish' : 'Publish'}
+        </button>
+        <Button size="iconSm" variant="dangerGhost" icon={Trash2} onClick={onDelete} title="Delete" />
+      </div>
     </Reorder.Item>
   );
 }
@@ -89,6 +106,7 @@ function LessonRow({ lesson, onPreview, onEdit, onDelete, onTogglePublish, onPer
 function ModuleCard({ module, expanded, onToggle, onPersistModules, onReorderLessons, onPersistLessons, onAddLesson, onEditModule, onDeleteModule, onToggleModulePublish, lessonHandlers }) {
   const controls = useDragControls();
   const lessons = module.lessons || [];
+  const live = lessons.filter((l) => l.isPublished).length;
   const dur = formatDuration(lessons.reduce((s, l) => s + (l.duration || 0), 0));
 
   return (
@@ -99,10 +117,13 @@ function ModuleCard({ module, expanded, onToggle, onPersistModules, onReorderLes
       dragControls={controls}
       onDragEnd={onPersistModules}
       whileDrag={{ scale: 1.005, boxShadow: 'var(--card-shadow)' }}
-      className="overflow-hidden rounded-xl border border-border bg-card shadow-card"
+      className="relative overflow-hidden rounded-xl border border-border bg-card shadow-card transition-shadow hover:shadow-lift"
     >
+      {/* Status accent strip */}
+      <span className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: module.isPublished ? 'var(--color-accent)' : 'var(--color-warning)' }} />
+
       {/* Header */}
-      <div className="flex items-center gap-2 p-3">
+      <div className="flex items-center gap-2 p-3 pl-4">
         <button type="button" onPointerDown={(e) => controls.start(e)} className="cursor-grab touch-none p-1 text-muted-foreground hover:text-foreground active:cursor-grabbing" title="Drag to reorder">
           <GripVertical className="h-4.5 w-4.5" />
         </button>
@@ -115,11 +136,13 @@ function ModuleCard({ module, expanded, onToggle, onPersistModules, onReorderLes
         <button type="button" onClick={onToggle} className="min-w-0 flex-1 text-left">
           <p className="truncate text-sm font-semibold text-foreground">{module.title}</p>
           <p className="text-[11px] text-muted-foreground">
-            {lessons.length} resource{lessons.length === 1 ? '' : 's'}{dur ? ` · ${dur}` : ''}
+            {lessons.length} resource{lessons.length === 1 ? '' : 's'}
+            {lessons.length ? ` · ${live} live` : ''}
+            {dur ? ` · ${dur}` : ''}
           </p>
         </button>
-        <Badge tone={module.isPublished ? 'success' : 'warning'}>{module.isPublished ? 'Published' : 'Draft'}</Badge>
-        <Button size="iconSm" variant="ghost" icon={Globe} onClick={onToggleModulePublish} title={module.isPublished ? 'Unpublish module' : 'Publish module'} />
+        <Badge tone={module.isPublished ? 'success' : 'warning'} className="hidden sm:inline-flex">{module.isPublished ? 'Published' : 'Draft'}</Badge>
+        <Button size="iconSm" variant="ghost" icon={module.isPublished ? Globe : GlobeLock} onClick={onToggleModulePublish} title={module.isPublished ? 'Unpublish module' : 'Publish module'} />
         <Button size="iconSm" variant="ghost" icon={Pencil} onClick={onEditModule} title="Edit module" />
         <Button size="iconSm" variant="dangerGhost" icon={Trash2} onClick={onDeleteModule} title="Delete module" />
       </div>
@@ -128,25 +151,28 @@ function ModuleCard({ module, expanded, onToggle, onPersistModules, onReorderLes
       <AnimatePresence initial={false}>
         {expanded ? (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2, ease: 'easeOut' }} className="overflow-hidden">
-            <div className="space-y-2 border-t border-border bg-muted/30 px-3 py-3">
-              {lessons.length === 0 ? (
-                <p className="px-1 py-3 text-center text-xs text-muted-foreground">No resources yet — add a document, video, link or text.</p>
-              ) : (
-                <Reorder.Group axis="y" as="div" values={lessons} onReorder={(next) => onReorderLessons(module._id, next)} className="space-y-2">
-                  {lessons.map((l) => (
-                    <LessonRow
-                      key={l._id}
-                      lesson={l}
-                      onPersist={() => onPersistLessons(module._id)}
-                      onPreview={() => lessonHandlers.preview(l)}
-                      onEdit={() => lessonHandlers.edit(module, l)}
-                      onDelete={() => lessonHandlers.remove(l)}
-                      onTogglePublish={() => lessonHandlers.togglePublish(l)}
-                    />
-                  ))}
-                </Reorder.Group>
-              )}
-              <Button size="sm" variant="secondary" icon={Plus} onClick={() => onAddLesson(module)} className="w-full">Add resource</Button>
+            <div className="border-t border-border bg-muted/30 py-3 pr-3 pl-6 sm:pl-8">
+              {/* nested under the chapter — indented with a vertical guide line */}
+              <div className="space-y-2 border-l-2 border-border pl-3 sm:pl-4">
+                {lessons.length === 0 ? (
+                  <p className="px-1 py-3 text-center text-xs text-muted-foreground">No resources yet — add a document, video, link or text.</p>
+                ) : (
+                  <Reorder.Group axis="y" as="div" values={lessons} onReorder={(next) => onReorderLessons(module._id, next)} className="space-y-2">
+                    {lessons.map((l) => (
+                      <LessonRow
+                        key={l._id}
+                        lesson={l}
+                        onPersist={() => onPersistLessons(module._id)}
+                        onPreview={() => lessonHandlers.preview(l)}
+                        onEdit={() => lessonHandlers.edit(module, l)}
+                        onDelete={() => lessonHandlers.remove(l)}
+                        onTogglePublish={() => lessonHandlers.requestPublish(l)}
+                      />
+                    ))}
+                  </Reorder.Group>
+                )}
+                <Button size="sm" variant="secondary" icon={Plus} onClick={() => onAddLesson(module)} className="w-full">Add resource</Button>
+              </div>
             </div>
           </motion.div>
         ) : null}
@@ -156,22 +182,29 @@ function ModuleCard({ module, expanded, onToggle, onPersistModules, onReorderLes
 }
 
 /* ── Page ────────────────────────────────────────────────────────────────────── */
+// Per-course content cache (course + modules-with-lessons), kept OUTSIDE React so revisiting a
+// course renders instantly while it revalidates in the background — no loader flash on every visit.
+const contentCache = new Map();
+
 export function CourseContentPage() {
   const { courseId } = useParams();
-  const navigate = useNavigate();
-  const [course, setCourse] = useState(null);
-  const [modules, setModules] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cached = contentCache.get(courseId);
+  const [course, setCourse] = useState(cached?.course ?? null);
+  const [modules, setModules] = useState(cached?.modules ?? []);
+  const [loading, setLoading] = useState(!cached); // only "loading" when there's nothing cached
   const [error, setError] = useState(null);
   const [expanded, setExpanded] = useState({});
+  const [statusSaving, setStatusSaving] = useState(false);
 
   // Modal / dialog state
   const [showCourseForm, setShowCourseForm] = useState(false);
   const [moduleModal, setModuleModal] = useState({ open: false, module: null });
   const [lessonModal, setLessonModal] = useState({ open: false, moduleId: null, lesson: null });
   const [preview, setPreview] = useState({ open: false, lesson: null });
-  const [confirm, setConfirm] = useState(null); // { kind:'module'|'lesson', item, label }
+  const [confirm, setConfirm] = useState(null); // { kind:'course'|'module'|'lesson', item, label }
   const [removing, setRemoving] = useState(false);
+  const [pubConfirm, setPubConfirm] = useState(null); // publish/unpublish confirmation: { kind, item }
+  const [publishing, setPublishing] = useState(false);
 
   const modulesRef = useRef(modules);
   modulesRef.current = modules;
@@ -208,6 +241,12 @@ export function CourseContentPage() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
+  // Mirror the on-screen data into the cache so a later revisit shows the latest instantly.
+  // Guard on _id so we never store one course's data under another course's id mid-navigation.
+  useEffect(() => {
+    if (course && course._id === courseId) contentCache.set(courseId, { course, modules });
+  }, [courseId, course, modules]);
+
   const stats = useMemo(() => {
     const lessons = modules.flatMap((m) => m.lessons || []);
     return {
@@ -217,6 +256,11 @@ export function CourseContentPage() {
       duration: formatDuration(lessons.reduce((s, l) => s + (l.duration || 0), 0)) || '—',
     };
   }, [modules]);
+
+  const allExpanded = modules.length > 0 && modules.every((m) => expanded[m._id]);
+  const toggleAll = () => setExpanded(allExpanded ? {} : Object.fromEntries(modules.map((m) => [m._id, true])));
+
+  const tags = Array.isArray(course?.tags) ? course.tags.filter(Boolean) : [];
 
   /* Reorder persistence */
   const persistModules = useCallback(() => {
@@ -234,6 +278,21 @@ export function CourseContentPage() {
     LessonService.reorder(moduleId, mod.lessons.map((l) => l._id)).catch((e) => { toast.error(e.message || 'Reorder failed'); loadModules(); });
   }, [loadModules]);
 
+  /* Course actions */
+  const toggleCoursePublish = async () => {
+    const next = course.status === 'published' ? 'draft' : 'published';
+    setStatusSaving(true);
+    try {
+      const updated = await CourseService.publish(course._id, next);
+      setCourse((c) => ({ ...c, status: updated?.status || next }));
+      toast.success(next === 'published' ? 'Course published' : 'Course unpublished');
+    } catch (e) {
+      toast.error(e.message || 'Failed to update status');
+    } finally {
+      setStatusSaving(false);
+    }
+  };
+
   /* Module actions */
   const toggleModulePublish = async (m) => {
     try {
@@ -250,6 +309,7 @@ export function CourseContentPage() {
     preview: (l) => setPreview({ open: true, lesson: l }),
     edit: (m, l) => setLessonModal({ open: true, moduleId: m._id, lesson: l }),
     remove: (l) => setConfirm({ kind: 'lesson', item: l, label: l.title }),
+    requestPublish: (l) => setPubConfirm({ kind: 'lesson', item: l }),
     togglePublish: async (l) => {
       try {
         await LessonService.publish(l._id, !l.isPublished);
@@ -283,11 +343,25 @@ export function CourseContentPage() {
     }
   };
 
+  const doTogglePublish = async () => {
+    if (!pubConfirm) return;
+    const { kind, item } = pubConfirm;
+    setPublishing(true);
+    try {
+      if (kind === 'course') await toggleCoursePublish();
+      else if (kind === 'module') await toggleModulePublish(item);
+      else await lessonHandlers.togglePublish(item);
+      setPubConfirm(null);
+    } finally {
+      setPublishing(false);
+    }
+  };
+
   const onSavedModulesChanged = async () => { await loadModules(); loadCourse(); };
 
-  if (loading) return <AdminLoader label="Loading course content…" />;
+  if (loading && !course) return <AdminLoader label="Loading course content…" />;
 
-  if (error || !course) {
+  if (!course) {
     return (
       <div className="w-full">
         <EmptyState
@@ -300,73 +374,104 @@ export function CourseContentPage() {
     );
   }
 
+  const isPublished = course.status === 'published';
+
+  // Publish/unpublish confirmation copy (course | module | resource).
+  const pubIsLive = pubConfirm?.kind === 'course' ? pubConfirm?.item?.status === 'published' : !!pubConfirm?.item?.isPublished;
+  const pubNoun = pubConfirm?.kind === 'module' ? 'module' : pubConfirm?.kind === 'lesson' ? 'resource' : 'course';
+
   return (
     <div className="w-full space-y-6">
-      {/* Header */}
+      {/* ── Hero ─────────────────────────────────────────────────────────────── */}
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-card">
-        <div className="px-6 py-6 sm:px-8" style={{ background: GRADIENT }}>
-          <Link to="/courses" className="inline-flex items-center gap-1.5 text-xs font-medium text-white/80 transition-colors hover:text-white">
+        <div className="relative overflow-hidden px-6 py-6 sm:px-8" style={{ background: GRADIENT }}>
+          <BookOpen className="pointer-events-none absolute -right-8 -top-10 h-48 w-48 rotate-12 text-white/10" />
+          <Link to="/courses" className="relative inline-flex items-center gap-1.5 text-xs font-medium text-white/80 transition-colors hover:text-white">
             <ArrowLeft className="h-3.5 w-3.5" /> All courses
           </Link>
-          <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
+
+          <div className="relative mt-4 flex flex-col gap-5 sm:flex-row sm:items-start">
+            {/* Title + meta */}
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-2xl font-bold text-white">{course.title}</h1>
-                <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white">{course.status}</span>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-white ring-1 ring-inset ring-white/20">
+                  <span className="h-1.5 w-1.5 rounded-full bg-white" /> {course.status}
+                </span>
               </div>
-              {course.summary ? <p className="mt-1 max-w-xl text-sm text-white/80">{course.summary}</p> : null}
+              {course.summary ? <p className="mt-1.5 max-w-2xl text-sm text-white/80">{course.summary}</p> : null}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {course.level ? <HeroChip icon={GraduationCap}><span className="capitalize">{course.level}</span></HeroChip> : null}
+                {course.category ? <HeroChip icon={FolderOpen}>{course.category}</HeroChip> : null}
+                {tags.length ? <HeroChip icon={Tag}>{tags.length} tag{tags.length === 1 ? '' : 's'}</HeroChip> : null}
+              </div>
             </div>
+
+            {/* Actions */}
             <div className="flex shrink-0 items-center gap-2">
+              <Button variant="white" icon={isPublished ? Globe : GlobeLock} loading={statusSaving} onClick={() => setPubConfirm({ kind: 'course', item: course })}>{isPublished ? 'Unpublish' : 'Publish'}</Button>
               <Button variant="white" icon={Settings2} onClick={() => setShowCourseForm(true)}>Edit</Button>
-              <Button as={Link} to={`/learn/${course._id}`} variant="white" icon={Eye}>Preview as student</Button>
+              <Button as={Link} to={`/learn/${course._id}`} variant="white" icon={Eye} className="hidden sm:inline-flex">Preview</Button>
             </div>
           </div>
         </div>
+
+        {/* Stats */}
         <div className="grid grid-cols-2 divide-x divide-y divide-border sm:grid-cols-4 sm:divide-y-0">
           <HeaderStat icon={Layers} label="Modules" value={stats.modules} />
           <HeaderStat icon={BookOpen} label="Resources" value={stats.lessons} />
-          <HeaderStat icon={Globe} label="Published" value={stats.published} />
+          <HeaderStat icon={Globe} label="Live" value={stats.published} />
           <HeaderStat icon={Clock} label="Duration" value={stats.duration} />
         </div>
       </div>
 
-      {/* Toolbar */}
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-foreground">Course content</h2>
-          <p className="text-xs text-muted-foreground">Drag to reorder · click a resource to preview</p>
-        </div>
-        <Button icon={Plus} onClick={() => setModuleModal({ open: true, module: null })}>Add module</Button>
-      </div>
+      {/* ── Content builder ──────────────────────────────────────────────────── */}
+      <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Course content</h2>
+              <p className="text-xs text-muted-foreground">
+                {modules.length} module{modules.length === 1 ? '' : 's'} · drag to reorder · click a resource to preview
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {modules.length > 0 ? (
+                <Button size="sm" variant="secondary" icon={ChevronsUpDown} onClick={toggleAll}>
+                  {allExpanded ? 'Collapse all' : 'Expand all'}
+                </Button>
+              ) : null}
+              <Button size="sm" icon={Plus} onClick={() => setModuleModal({ open: true, module: null })}>Add module</Button>
+            </div>
+          </div>
 
-      {/* Modules */}
-      {modules.length === 0 ? (
-        <EmptyState
-          icon={Sparkles}
-          title="Start building your course"
-          description="Add your first module (like a chapter), then upload documents, videos, links or text inside it."
-          action={<Button icon={Plus} onClick={() => setModuleModal({ open: true, module: null })}>Add your first module</Button>}
-        />
-      ) : (
-        <Reorder.Group axis="y" as="div" values={modules} onReorder={setModules} className="space-y-3">
-          {modules.map((m) => (
-            <ModuleCard
-              key={m._id}
-              module={m}
-              expanded={!!expanded[m._id]}
-              onToggle={() => setExpanded((p) => ({ ...p, [m._id]: !p[m._id] }))}
-              onPersistModules={persistModules}
-              onReorderLessons={reorderLessons}
-              onPersistLessons={persistLessons}
-              onAddLesson={(mod) => setLessonModal({ open: true, moduleId: mod._id, lesson: null })}
-              onEditModule={() => setModuleModal({ open: true, module: m })}
-              onDeleteModule={() => setConfirm({ kind: 'module', item: m, label: m.title })}
-              onToggleModulePublish={() => toggleModulePublish(m)}
-              lessonHandlers={lessonHandlers}
+          {modules.length === 0 ? (
+            <EmptyState
+              icon={Sparkles}
+              title="Start building your course"
+              description="Add your first module (like a chapter), then upload documents, videos, links or text inside it."
+              action={<Button icon={Plus} onClick={() => setModuleModal({ open: true, module: null })}>Add your first module</Button>}
             />
-          ))}
-        </Reorder.Group>
-      )}
+          ) : (
+            <Reorder.Group axis="y" as="div" values={modules} onReorder={setModules} className="space-y-3">
+              {modules.map((m) => (
+                <ModuleCard
+                  key={m._id}
+                  module={m}
+                  expanded={!!expanded[m._id]}
+                  onToggle={() => setExpanded((p) => ({ ...p, [m._id]: !p[m._id] }))}
+                  onPersistModules={persistModules}
+                  onReorderLessons={reorderLessons}
+                  onPersistLessons={persistLessons}
+                  onAddLesson={(mod) => setLessonModal({ open: true, moduleId: mod._id, lesson: null })}
+                  onEditModule={() => setModuleModal({ open: true, module: m })}
+                  onDeleteModule={() => setConfirm({ kind: 'module', item: m, label: m.title })}
+                  onToggleModulePublish={() => toggleModulePublish(m)}
+                  lessonHandlers={lessonHandlers}
+                />
+              ))}
+            </Reorder.Group>
+          )}
+      </div>
 
       {/* Modals */}
       <CourseFormModal open={showCourseForm} onClose={() => setShowCourseForm(false)} course={course} onSaved={loadCourse} />
@@ -396,6 +501,20 @@ export function CourseContentPage() {
             ? `"${confirm?.label}" and all the resources inside it will be permanently deleted.`
             : `"${confirm?.label}" will be permanently deleted.`
         }
+      />
+      <ConfirmDialog
+        open={!!pubConfirm}
+        onClose={() => setPubConfirm(null)}
+        onConfirm={doTogglePublish}
+        loading={publishing}
+        tone="primary"
+        title={pubIsLive ? `Unpublish ${pubNoun}?` : `Publish ${pubNoun}?`}
+        message={
+          pubIsLive
+            ? `"${pubConfirm?.item?.title}" will be hidden from students until you publish it again.`
+            : `"${pubConfirm?.item?.title}" will become visible to students.`
+        }
+        confirmLabel={pubIsLive ? 'Unpublish' : 'Publish'}
       />
     </div>
   );
