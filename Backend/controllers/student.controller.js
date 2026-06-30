@@ -104,6 +104,15 @@ const getStudent = wrap(async (req, res) => {
   return ok(res, { ...sanitize(user), enrollments: data });
 });
 
+// GET /api/students/check-email?email= — is this email free? Uniqueness is across ALL users,
+// so the create form can warn before submit. Returns { available }.
+const checkEmail = wrap(async (req, res) => {
+  const email = String(req.query.email || '').toLowerCase().trim();
+  if (!email) return fail(res, 400, 'Email is required');
+  const exists = await User.exists({ email });
+  return ok(res, { available: !exists });
+});
+
 // POST /api/students — create a student account
 const createStudent = wrap(async (req, res) => {
   const { firstName, lastName, email, password, phone, country } = req.body || {};
@@ -223,6 +232,7 @@ const enrollStudent = wrap(async (req, res) => {
 module.exports = {
   listStudents,
   getStudent,
+  checkEmail,
   createStudent,
   updateStudent,
   setStudentStatus,

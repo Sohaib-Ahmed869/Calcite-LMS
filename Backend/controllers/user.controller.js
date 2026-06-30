@@ -74,6 +74,14 @@ const getUser = wrap(async (req, res) => {
   return ok(res, await serialize(user));
 });
 
+// GET /api/users/check-email?email= — is this email free? (uniqueness is across all users)
+const checkEmail = wrap(async (req, res) => {
+  const email = String(req.query.email || '').toLowerCase().trim();
+  if (!email) return fail(res, 400, 'Email is required');
+  const exists = await User.exists({ email });
+  return ok(res, { available: !exists });
+});
+
 // POST /api/users — create an account with one or more roles.
 const createUser = wrap(async (req, res) => {
   const { firstName, lastName, email, password } = req.body || {};
@@ -178,4 +186,4 @@ const deleteUser = wrap(async (req, res) => {
   return ok(res, { deleted: true });
 });
 
-module.exports = { listUsers, getUser, createUser, updateUser, setUserStatus, resetUserPassword, deleteUser };
+module.exports = { listUsers, getUser, checkEmail, createUser, updateUser, setUserStatus, resetUserPassword, deleteUser };

@@ -7,6 +7,7 @@ const c = require('../controllers/student.controller');
 const router = express.Router();
 
 router.get('/students', requireAdmin, c.listStudents);
+router.get('/students/check-email', requireAdmin, c.checkEmail); // before /:id so it isn't shadowed
 router.post('/students', requireAdmin, c.createStudent);
 router.get('/students/:id', requireAdmin, c.getStudent);
 router.put('/students/:id', requireAdmin, c.updateStudent);

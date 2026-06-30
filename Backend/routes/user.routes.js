@@ -7,6 +7,7 @@ const c = require('../controllers/user.controller');
 const router = express.Router();
 
 router.get('/users', requireAdmin, c.listUsers);
+router.get('/users/check-email', requireAdmin, c.checkEmail); // before /:id so it isn't shadowed
 router.post('/users', requireAdmin, c.createUser);
 router.get('/users/:id', requireAdmin, c.getUser);
 router.put('/users/:id', requireAdmin, c.updateUser);
